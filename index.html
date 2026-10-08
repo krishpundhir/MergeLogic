@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>In-Place Merge — O(1) Auxiliary Space</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <header class="page-header">
+    <h1>In-Place Merge — O(1) Auxiliary Space</h1>
+    <p class="subtitle">Merging Two Sorted Portions of One Array</p>
+    <p class="promise">One array. No temporary array. Only a few pointers.</p>
+  </header>
+
+  <main class="page">
+
+    <!-- Array, indices, pointers -->
+    <section class="card stage" aria-label="Array visualization">
+      <div class="stage-head">
+        <code id="callLabel" class="call">merge(arr, 0, 4, 9)</code>
+        <span id="stepTitle" class="step-title"></span>
+      </div>
+
+      <div class="viz" id="viz">
+        <div class="board" id="board">
+          <div class="brackets" id="brackets" aria-hidden="true"></div>
+          <div class="track" id="track" role="list" aria-label="Array elements"></div>
+          <div class="indices" id="indices" aria-hidden="true"></div>
+          <div class="pointers" id="pointers" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"><i class="swatch o-left"></i>Started in the left portion</span>
+        <span class="legend-item"><i class="swatch o-right"></i>Started in the right portion</span>
+        <span class="legend-item"><i class="swatch ptr-moves"></i>Solid pointer: moves</span>
+        <span class="legend-item"><i class="swatch ptr-fixed"></i>Dashed pointer: fixed</span>
+      </div>
+    </section>
+
+    <!-- Navigation -->
+    <nav class="card nav" aria-label="Step navigation">
+      <button id="prevBtn" class="btn btn-secondary" type="button">&larr; Previous</button>
+      <div class="nav-mid">
+        <div id="stepIndicator" class="step-indicator" aria-live="polite">Step 1 / 7</div>
+        <div id="progress" class="progress" aria-hidden="true"></div>
+      </div>
+      <button id="nextBtn" class="btn btn-primary" type="button">Next &rarr;</button>
+    </nav>
+
+    <div class="two-col">
+      <!-- Variables -->
+      <section class="card" aria-label="Variables">
+        <h2>Variables</h2>
+        <div id="vars" class="vars"></div>
+        <p class="hint">mid and right are fixed for this call. left and i move.</p>
+      </section>
+
+      <!-- Operation + Why -->
+      <section class="card" aria-label="Current operation">
+        <div class="card-head">
+          <h2>Current Operation</h2>
+          <span id="opStatus" class="op-status" aria-live="polite"></span>
+        </div>
+        <ol id="ops" class="ops"></ol>
+
+        <h2 class="why-title">Why?</h2>
+        <p id="whyText" class="why"></p>
+        <p id="noteText" class="note" hidden></p>
+        <div id="changes" class="changes"></div>
+      </section>
+    </div>
+
+    <!-- Step 7 only -->
+    <section id="nextCall" class="card next-call" hidden aria-label="Next merge call">
+      <div class="next-call-head">
+        <span class="check" aria-hidden="true">&#10003;</span>
+        <h2>The current merge step is complete</h2>
+      </div>
+      <p>The merged portion <code>arr[0..7]</code> is now sorted. The algorithm continues with:</p>
+      <pre class="code-block"><code>merge(arr, left, i - 1, right)
+= merge(arr, <span id="ncLeft">4</span>, <span id="ncMid">7</span>, <span id="ncRight">9</span>)</code></pre>
+      <p class="muted">With left = 4, i = 8 and right = 9, this call merges
+        <code>[1, 6, 7, 8]</code> with the remaining right portion <code>[3, 5]</code>.</p>
+    </section>
+
+    <!-- Complexity -->
+    <section class="card complexity" aria-label="Complexity">
+      <h2>Complexity</h2>
+      <div class="complexity-grid">
+        <div>
+          <p class="big">Auxiliary space: O(1)</p>
+          <p><strong>Why?</strong> No temporary array is created. Only a constant number of
+            variables (<code>left</code>, <code>mid</code>, <code>i</code>, <code>right</code>,
+            <code>count</code>) are used, no matter how long the array is.</p>
+          <p>The array itself is modified in-place.</p>
+        </div>
+        <div>
+          <p class="big">Time is a separate question</p>
+          <p>O(1) describes extra memory, not running time. Swapping and shifting elements
+            one position at a time can take quadratic time in the worst case, because an
+            element may travel across many positions.</p>
+          <p class="muted">The next <code>merge</code> call is the last thing the function does,
+            so it can be written as a loop and the call stack does not grow.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

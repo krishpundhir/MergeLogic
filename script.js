@@ -1,150 +1,67 @@
-/* In-place merge visualizer.
-   One array, no temporary array. Every step is an explicit, predefined state,
-   so Next and Previous are fully deterministic. */
+/* In-place merge visualizer: two fixed examples, array + pointers + variables.
+   Every step is an explicit stored state, so Previous/Next are deterministic. */
 
 'use strict';
 
-/* ------------------------------------------------------------------ */
-/* Data                                                               */
-/* ------------------------------------------------------------------ */
+const CALL_OP = 'Call merge(arr, left, i - 1, right)';
+const OP_A = 'swap(left, i), left++, i++, count++';
+const OP_B = 'swap(left, mid+1), left++';
 
-const ORIGINAL = [-2, 1, 6, 7, 8, -9, -1, 0, 3, 5];
-const LEFT_ORIGIN = new Set([-2, 1, 6, 7, 8]);
-const N = ORIGINAL.length;
-
-const CALL = 'merge(arr, 0, 4, 9)';
-const POINTER_ORDER = ['left', 'i', 'mid', 'right'];
-const VAR_ORDER = ['left', 'mid', 'i', 'right', 'count'];
-const FIXED_POINTERS = new Set(['mid', 'right']);
-
-/* Each state describes what the screen shows AFTER its transition.
-   `compare` and `swaps` describe the transition from the previous state. */
-const states = [
+/* Each state is what the screen shows AFTER its step.
+   call = [left, mid, right] in the header; swaps = swaps performed to reach this state. */
+const EXAMPLES = [
   {
-    title: 'Initial state',
-    call: CALL,
-    array: [-2, 1, 6, 7, 8, -9, -1, 0, 3, 5],
-    ptr: { left: 0, mid: 4, i: 5, right: 9 },
-    count: 0,
-    swaps: [],
-    focus: [0, 5],
-    ops: [{
-      kind: 'compare', status: 'active',
-      text: 'compare(arr[left], arr[i])',
-      detail: 'arr[0] = -2 vs arr[5] = -9  →  -9 < -2'
-    }],
-    why: 'Compare arr[left] = -2 with arr[i] = -9. Since -9 is smaller, the element at index i must be moved before the element at index left.',
-    brackets: [
-      { from: 0, to: 4, label: 'Left sorted section', cls: 'left' },
-      { from: 5, to: 9, label: 'Right sorted section', cls: 'right' }
+    arr: [-2, 1, 6, 7, 8, -9, -1, 0, 3, 5],
+    states: [
+      { call: [0, 4, 9], array: [-2, 1, 6, 7, 8, -9, -1, 0, 3, 5], ptr: { left: 0, mid: 4, i: 5, right: 9 }, count: 0, swaps: [], op: '' },
+      { call: [0, 4, 9], array: [-9, 1, 6, 7, 8, -2, -1, 0, 3, 5], ptr: { left: 1, mid: 4, i: 6, right: 9 }, count: 1, swaps: [[0, 5]], op: OP_A },
+      { call: [0, 4, 9], array: [-9, -2, 6, 7, 8, 1, -1, 0, 3, 5], ptr: { left: 2, mid: 4, i: 6, right: 9 }, count: 1, swaps: [[1, 5]], op: OP_B },
+      { call: [0, 4, 9], array: [-9, -2, -1, 7, 8, 1, 6, 0, 3, 5], ptr: { left: 3, mid: 4, i: 7, right: 9 }, count: 2, swaps: [[2, 6]], op: OP_A },
+      { call: [0, 4, 9], array: [-9, -2, -1, 0, 8, 1, 6, 7, 3, 5], ptr: { left: 4, mid: 4, i: 8, right: 9 }, count: 3, swaps: [[3, 7]], op: OP_A },
+      { call: [0, 4, 9], array: [-9, -2, -1, 0, 1, 6, 7, 8, 3, 5], ptr: { left: 5, mid: 4, i: 8, right: 9 }, count: 3, swaps: [[4, 5], [5, 6], [6, 7]], op: 'swap(left, mid+1), swap(5, 6), swap(6, 7), left++' },
+      { call: [5, 7, 9], array: [-9, -2, -1, 0, 1, 6, 7, 8, 3, 5], ptr: { left: 5, mid: 7, i: 8, right: 9 }, count: 0, swaps: [], op: CALL_OP },
+      { call: [5, 7, 9], array: [-9, -2, -1, 0, 1, 3, 7, 8, 6, 5], ptr: { left: 6, mid: 7, i: 9, right: 9 }, count: 1, swaps: [[5, 8]], op: OP_A },
+      { call: [5, 7, 9], array: [-9, -2, -1, 0, 1, 3, 5, 8, 6, 7], ptr: { left: 7, mid: 7, i: 10, right: 9 }, count: 2, swaps: [[6, 9]], op: OP_A },
+      { call: [5, 7, 9], array: [-9, -2, -1, 0, 1, 3, 5, 6, 7, 8], ptr: { left: 7, mid: 7, i: 10, right: 9 }, count: 2, swaps: [[7, 8], [8, 9]], op: 'swap(7, 8), swap(8, 9)' }
     ]
   },
   {
-    title: 'Swap index 0 and index 5',
-    call: CALL,
-    array: [-9, 1, 6, 7, 8, -2, -1, 0, 3, 5],
-    ptr: { left: 1, mid: 4, i: 6, right: 9 },
-    count: 1,
-    compare: { a: 0, b: 5 },
-    swaps: [[0, 5]],
-    why: '-9 is smaller than -2, so the two elements are swapped. left moves from 0 → 1. i moves from 5 → 6. count becomes 1.',
-    brackets: [{ from: 0, to: 0, label: 'Placed', cls: 'placed' }]
-  },
-  {
-    title: 'Swap index 1 and index 5',
-    call: CALL,
-    array: [-9, -2, 6, 7, 8, 1, -1, 0, 3, 5],
-    ptr: { left: 2, mid: 4, i: 6, right: 9 },
-    count: 1,
-    compare: { a: 1, b: 5 },
-    swaps: [[1, 5]],
-    why: 'Compare 1 and -2. Since -2 is smaller, move -2 into the left sorted portion.',
-    note: 'The swap partner here is index 5: that is where the displaced -2 now sits. It is not where the i pointer is.',
-    brackets: [{ from: 0, to: 1, label: 'Placed', cls: 'placed' }]
-  },
-  {
-    title: 'Compare, then swap index 2 and index 6',
-    call: CALL,
-    array: [-9, -2, -1, 7, 8, 1, 6, 0, 3, 5],
-    ptr: { left: 3, mid: 4, i: 7, right: 9 },
-    count: 2,
-    compare: { a: 2, b: 6 },
-    swaps: [[2, 6]],
-    why: 'Compare arr[2] = 6 with arr[6] = -1. Since -1 is smaller, the two elements are swapped, and -1 moves into the left portion.',
-    brackets: [{ from: 0, to: 2, label: 'Placed', cls: 'placed' }]
-  },
-  {
-    title: 'Swap index 3 and index 7',
-    call: CALL,
-    array: [-9, -2, -1, 0, 8, 1, 6, 7, 3, 5],
-    ptr: { left: 4, mid: 4, i: 8, right: 9 },
-    count: 3,
-    compare: { a: 3, b: 7 },
-    swaps: [[3, 7]],
-    why: '0 is smaller than 7, so 0 is moved into the left portion.',
-    brackets: [{ from: 0, to: 3, label: 'Placed', cls: 'placed' }]
-  },
-  {
-    title: 'Shift 8 right with three swaps',
-    call: CALL,
-    array: [-9, -2, -1, 0, 1, 6, 7, 8, 3, 5],
-    ptr: { left: 4, mid: 4, i: 8, right: 9 },
-    count: 3,
-    swaps: [[4, 5], [5, 6], [6, 7]],
-    why: '8 is out of order inside arr[4..7]. Adjacent swaps shift it right one position at a time, past 1, 6 and 7, until arr[4..7] = [1, 6, 7, 8] is sorted. These swaps are shifts, so no pointer changes.',
-    brackets: [
-      { from: 0, to: 7, label: 'Sorted left portion', cls: 'left' },
-      { from: 8, to: 9, label: 'Remaining right', cls: 'right' }
+    arr: [-7, -3, 3, 6, 9, -11, 2, 3, 10],
+    states: [
+      { call: [0, 4, 8], array: [-7, -3, 3, 6, 9, -11, 2, 3, 10], ptr: { left: 0, mid: 4, i: 5, right: 8 }, count: 0, swaps: [], op: '' },
+      { call: [0, 4, 8], array: [-11, -3, 3, 6, 9, -7, 2, 3, 10], ptr: { left: 1, mid: 4, i: 6, right: 8 }, count: 1, swaps: [[0, 5]], op: OP_A },
+      { call: [0, 4, 8], array: [-11, -7, 3, 6, 9, -3, 2, 3, 10], ptr: { left: 2, mid: 4, i: 6, right: 8 }, count: 1, swaps: [[5, 1]], op: 'swap(mid+1, left), left++' },
+      { call: [0, 4, 8], array: [-11, -7, -3, 6, 9, 3, 2, 3, 10], ptr: { left: 3, mid: 4, i: 6, right: 8 }, count: 1, swaps: [[5, 2]], op: 'swap(mid+1, left), left++' },
+      { call: [0, 4, 8], array: [-11, -7, -3, 2, 9, 3, 6, 3, 10], ptr: { left: 4, mid: 4, i: 7, right: 8 }, count: 2, swaps: [[3, 6]], op: OP_A },
+      { call: [0, 4, 8], array: [-11, -7, -3, 2, 3, 6, 9, 3, 10], ptr: { left: 5, mid: 4, i: 7, right: 8 }, count: 2, swaps: [[4, 5], [5, 6]], op: 'swap(left, mid+1), swap(5, 6), left++' },
+      { call: [5, 6, 8], array: [-11, -7, -3, 2, 3, 6, 9, 3, 10], ptr: { left: 5, mid: 6, i: 7, right: 8 }, count: 0, swaps: [], op: CALL_OP },
+      { call: [5, 6, 8], array: [-11, -7, -3, 2, 3, 3, 9, 6, 10], ptr: { left: 6, mid: 6, i: 8, right: 8 }, count: 1, swaps: [[5, 7]], op: OP_A },
+      { call: [5, 6, 8], array: [-11, -7, -3, 2, 3, 3, 6, 9, 10], ptr: { left: 7, mid: 6, i: 8, right: 8 }, count: 1, swaps: [[6, 7]], op: OP_B },
+      { call: [7, 7, 8], array: [-11, -7, -3, 2, 3, 3, 6, 9, 10], ptr: { left: 7, mid: 7, i: 8, right: 8 }, count: 0, swaps: [], op: CALL_OP },
+      { call: [7, 7, 8], array: [-11, -7, -3, 2, 3, 3, 6, 9, 10], ptr: { left: 7, mid: 7, i: 8, right: 8 }, count: 0, swaps: [], op: 'No swaps. Return.' }
     ]
-  },
-  {
-    title: 'Next merge call',
-    call: 'next: merge(arr, left, i - 1, right)',
-    array: [-9, -2, -1, 0, 1, 6, 7, 8, 3, 5],
-    ptr: { left: 4, mid: 4, i: 8, right: 9 },
-    count: 3,
-    swaps: [],
-    ops: [{
-      kind: 'call', status: 'next',
-      text: 'merge(arr, left, i - 1, right)',
-      detail: '= merge(arr, 4, 7, 9)'
-    }],
-    why: 'The current merge step is complete. The merged portion arr[0..7] is now sorted. The algorithm continues with merge(arr, left, i - 1, right) on what is left.',
-    brackets: [
-      { from: 0, to: 3, label: 'Placed', cls: 'placed' },
-      { from: 4, to: 7, label: 'Next left', cls: 'left' },
-      { from: 8, to: 9, label: 'Next right', cls: 'right' }
-    ],
-    nextCall: { left: 4, mid: 7, right: 9 }
   }
 ];
 
-/* Build the operation list of each state and verify the whole chain once. */
-states.forEach((s, k) => {
-  if (k === 0) return;
-  const sim = states[k - 1].array.slice();
-  const ops = [];
-  if (s.compare) {
-    const { a, b } = s.compare;
-    ops.push({
-      kind: 'compare',
-      text: `compare(arr[${a}], arr[${b}])`,
-      detail: `arr[${a}] = ${sim[a]} vs arr[${b}] = ${sim[b]}  →  ${sim[b]} < ${sim[a]}`
-    });
-  }
-  s.swaps.forEach(([a, b]) => {
-    ops.push({ kind: 'swap', text: `swap(arr[${a}], arr[${b}])`, detail: `${sim[a]} ↔ ${sim[b]}` });
-    [sim[a], sim[b]] = [sim[b], sim[a]];
+/* Boxes keep an identity (token id), so equal values such as the two 3s in
+   Example 2 are never confused. Precompute the token order of every state
+   and check each stored array against it. */
+EXAMPLES.forEach((E, e) => {
+  E.states.forEach((s, k) => {
+    s.ids = (k ? E.states[k - 1].ids : E.arr.map((_, id) => id)).slice();
+    s.swaps.forEach(([a, b]) => { [s.ids[a], s.ids[b]] = [s.ids[b], s.ids[a]]; });
+    if (s.ids.map((id) => E.arr[id]).join() !== s.array.join()) {
+      console.error('Example', e + 1, 'step', k, 'does not match its swaps');
+    }
   });
-  if (!s.ops) s.ops = ops;
-  if (sim.join() !== s.array.join()) {
-    console.error('State chain mismatch at step', k + 1, sim, s.array);
-  }
+  E.slots = Math.max(E.arr.length, ...E.states.map((s) => Math.max(...Object.values(s.ptr)) + 1));
 });
 
 /* ------------------------------------------------------------------ */
-/* DOM + runtime state                                                */
-/* ------------------------------------------------------------------ */
+
+const POINTERS = ['left', 'i', 'mid', 'right'];
+const VARS = ['left', 'mid', 'i', 'right', 'count'];
+const FIXED = new Set(['mid', 'right']);
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls, text) => {
@@ -154,18 +71,18 @@ const el = (tag, cls, text) => {
   return node;
 };
 
-const viz = $('viz'), board = $('board'), track = $('track'), indicesEl = $('indices');
-const pointersEl = $('pointers'), bracketsEl = $('brackets');
+const viz = $('viz'), board = $('board'), track = $('track');
+const indicesEl = $('indices'), pointersEl = $('pointers');
 const prevBtn = $('prevBtn'), nextBtn = $('nextBtn');
+const tabs = [...document.querySelectorAll('.tab')];
 
-const cells = new Map();     // value -> cell element (values are unique)
-const idxEls = [];
-const ptrEls = {};           // name -> { root, stem }
-
+const cells = [], idxEls = [];
+let ptrEls = {};
+let E = EXAMPLES[0];
+let n = 0, slots = 0;
 let currentStep = 0;
 let busy = false;
-let displayed = ORIGINAL.slice();   // array currently on screen
-let lastVars = null;
+let displayed = [];
 let geo = {};
 let pendingResize = false;
 
@@ -173,43 +90,37 @@ const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').match
 const SPEED = reduceMotion ? 0.3 : 1;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms * SPEED));
 
-/* ------------------------------------------------------------------ */
-/* Geometry and board construction                                    */
-/* ------------------------------------------------------------------ */
+/* ---------- board ---------- */
 
 function computeGeometry() {
   const cs = getComputedStyle(viz);
   const avail = viz.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const gap = avail < 520 ? 6 : 12;
-  const cell = Math.max(26, Math.min(76, Math.floor((avail - gap * (N - 1)) / N)));
-  geo = {
-    cell, gap,
-    pitch: cell + gap,
-    cellH: Math.round(cell * 0.92),
-    lane: Math.round(cell * 0.5),
-    width: (cell + gap) * N - gap
-  };
+  const cell = Math.max(24, Math.min(76, Math.floor((avail - gap * (slots - 1)) / slots)));
+  geo = { cell, gap, pitch: cell + gap, cellH: Math.round(cell * 0.92), lane: Math.round(cell * 0.5), width: (cell + gap) * slots - gap };
 }
 
 function buildBoard() {
-  ORIGINAL.forEach((v) => {
-    const c = el('div', 'cell ' + (LEFT_ORIGIN.has(v) ? 'o-left' : 'o-right'), String(v));
+  track.replaceChildren(); indicesEl.replaceChildren(); pointersEl.replaceChildren();
+  cells.length = 0; idxEls.length = 0; ptrEls = {};
+
+  const initialMid = E.states[0].ptr.mid;
+  if (slots > n) track.appendChild(el('div', 'ghost'));          // empty slot for a pointer that runs past the end
+  E.arr.forEach((v, id) => {
+    const c = el('div', 'cell ' + (id <= initialMid ? 'o-left' : 'o-right'), String(v));
     c.setAttribute('role', 'listitem');
-    cells.set(v, c);
+    cells.push(c);
     track.appendChild(c);
   });
-  for (let i = 0; i < N; i++) {
-    const d = el('div', 'idx', String(i));
+  for (let k = 0; k < slots; k++) {
+    const d = el('div', 'idx', String(k));
     idxEls.push(d);
     indicesEl.appendChild(d);
   }
-  POINTER_ORDER.forEach((name) => {
+  POINTERS.forEach((name) => {
     const root = el('div', 'ptr ptr-' + name);
     const stem = el('div', 'stem');
-    const badge = el('div', 'badge');
-    badge.appendChild(el('span', '', name));
-    badge.appendChild(el('small', '', FIXED_POINTERS.has(name) ? 'fixed' : 'moves'));
-    root.append(stem, badge);
+    root.append(stem, el('div', 'badge', name));
     pointersEl.appendChild(root);
     ptrEls[name] = { root, stem };
   });
@@ -218,42 +129,30 @@ function buildBoard() {
 function applyGeometry() {
   board.style.width = geo.width + 'px';
   track.style.height = geo.cellH + geo.lane * 2 + 'px';
-  cells.forEach((c) => {
-    c.style.width = geo.cell + 'px';
-    c.style.height = geo.cellH + 'px';
-    c.style.top = geo.lane + 'px';
-    c.style.fontSize = Math.max(13, Math.round(geo.cell * 0.3)) + 'px';
-  });
-  idxEls.forEach((d, i) => {
-    d.style.left = i * geo.pitch + 'px';
-    d.style.width = geo.cell + 'px';
-  });
+  const size = (node) => {
+    node.style.width = geo.cell + 'px';
+    node.style.height = geo.cellH + 'px';
+    node.style.top = geo.lane + 'px';
+  };
+  cells.forEach((c) => { size(c); c.style.fontSize = Math.max(12, Math.round(geo.cell * 0.3)) + 'px'; });
+  const ghost = track.querySelector('.ghost');
+  if (ghost) { size(ghost); ghost.style.transform = `translateX(${n * geo.pitch}px)`; }
+  idxEls.forEach((d, k) => { d.style.left = k * geo.pitch + 'px'; d.style.width = geo.cell + 'px'; });
 }
 
-const cellX = (index) => index * geo.pitch;
-const moveCell = (v, index, y = 0) => {
-  cells.get(v).style.transform = `translate(${cellX(index)}px, ${y}px)`;
-};
-
-function positionCells(arr) {
-  arr.forEach((v, i) => {
-    cells.get(v).style.transitionDuration = '';
-    moveCell(v, i, 0);
-  });
+const moveCell = (id, index, y = 0) => { cells[id].style.transform = `translate(${index * geo.pitch}px, ${y}px)`; };
+function positionCells(ids) {
+  ids.forEach((id, k) => { cells[id].style.transitionDuration = ''; moveCell(id, k, 0); });
 }
 
-/* ------------------------------------------------------------------ */
-/* Rendering pieces                                                   */
-/* ------------------------------------------------------------------ */
-
-const LEVEL_H = 46, STEM_BASE = 12, BADGE_H = 38;
-
-function renderPointers(s) {
-  const labelW = geo.cell < 44 ? 46 : 60;
+/* Pointers that are close together are stacked on different levels so labels never overlap. */
+const LEVEL_H = 40, STEM_BASE = 12, BADGE_H = 32;
+function renderPointers(ptr) {
+  const labelW = geo.cell < 44 ? 44 : 58;
   const placed = [];
   let maxLevel = 0;
-  POINTER_ORDER.forEach((name) => {
-    const x = s.ptr[name] * geo.pitch + geo.cell / 2;
+  POINTERS.forEach((name) => {
+    const x = ptr[name] * geo.pitch + geo.cell / 2;
     let level = 0;
     while (placed.some((p) => p.level === level && Math.abs(p.x - x) < labelW + 6)) level++;
     placed.push({ x, level });
@@ -267,276 +166,143 @@ function renderPointers(s) {
   pointersEl.style.height = STEM_BASE + maxLevel * LEVEL_H + BADGE_H + 8 + 'px';
 }
 
-function renderBrackets(s) {
-  bracketsEl.replaceChildren();
-  s.brackets.forEach((b) => {
-    const node = el('div', 'bracket ' + b.cls);
-    node.style.left = b.from * geo.pitch + 'px';
-    node.style.width = (b.to - b.from) * geo.pitch + geo.cell + 'px';
-    node.appendChild(el('b', '', b.label));
-    node.appendChild(el('span', '', '[' + s.array.slice(b.from, b.to + 1).join(', ') + ']'));
-    bracketsEl.appendChild(node);
-  });
-}
-
-function renderVars(s) {
+function renderVars(s, prev) {
   const vals = { ...s.ptr, count: s.count };
+  const before = prev ? { ...prev.ptr, count: prev.count } : null;
   const box = $('vars');
   box.replaceChildren();
-  VAR_ORDER.forEach((name) => {
-    const kind = name === 'count' ? 'counter' : FIXED_POINTERS.has(name) ? 'fixed' : 'moves';
-    const changed = lastVars && lastVars[name] !== vals[name];
-    const card = el('div', 'var ' + kind + (changed ? ' changed' : ''));
+  VARS.forEach((name) => {
+    const card = el('div', 'var ' + name + (FIXED.has(name) ? ' fixed' : '') + (before && before[name] !== vals[name] ? ' changed' : ''));
     card.append(el('span', 'vname', name), el('span', 'veq', '='), el('span', 'vval', String(vals[name])));
-    card.appendChild(el('span', 'vtag', kind === 'counter' ? 'changes' : kind === 'fixed' ? 'fixed, never moves' : 'moves'));
-    if (changed) card.appendChild(el('span', 'vwas', 'was ' + lastVars[name]));
     box.appendChild(card);
   });
-  lastVars = vals;
 }
 
-function renderOps(k, mode) {
-  const s = states[k];
-  const list = $('ops');
-  list.replaceChildren();
-  s.ops.forEach((op) => {
-    const li = el('li', 'op ' + (mode === 'pending' ? 'pending' : op.status || 'done'));
-    li.appendChild(el('span', 'op-mark'));
-    li.appendChild(el('code', 'op-text', op.text));
-    li.appendChild(el('span', 'op-detail', op.detail));
-    list.appendChild(li);
-  });
-}
-
-function setOp(index, status) {
-  const li = $('ops').children[index];
-  if (li) li.className = 'op ' + status;
-}
-
-function renderWhy(k) {
-  const s = states[k];
-  $('whyText').textContent = s.why;
-  const note = $('noteText');
-  note.hidden = !s.note;
-  note.textContent = s.note || '';
-
-  const box = $('changes');
-  box.replaceChildren();
-  const prev = k > 0 ? states[k - 1] : null;
-  if (prev) {
-    ['left', 'i'].forEach((name) => {
-      if (prev.ptr[name] !== s.ptr[name]) box.appendChild(el('span', 'pill', `${name}: ${prev.ptr[name]} → ${s.ptr[name]}`));
-    });
-    if (prev.count !== s.count) box.appendChild(el('span', 'pill', `count: ${prev.count} → ${s.count}`));
-  }
-  if (!box.children.length) {
-    box.appendChild(el('span', 'pill none', k === 0 ? 'No pointer has moved yet.' : 'No pointer or counter changed in this step.'));
-  }
-}
-
-/* Text that describes a step: shown at the start of a forward move. */
-function renderTexts(k, mode) {
-  const s = states[k];
-  $('callLabel').textContent = s.call;
-  $('stepTitle').textContent = s.title;
-  $('stepIndicator').textContent = `Step ${k + 1} / ${states.length}`;
-  renderOps(k, mode);
-  renderWhy(k);
-}
-
-function renderProgress(k) {
-  const box = $('progress');
-  if (!box.children.length) states.forEach(() => box.appendChild(el('span', 'seg')));
-  [...box.children].forEach((seg, i) => seg.classList.toggle('done', i <= k));
+function renderTexts(k) {
+  const s = E.states[k];
+  $('callLabel').textContent = `merge(arr, ${s.call[0]}, ${s.call[1]}, ${s.call[2]})`;
+  $('opLine').textContent = s.op;
+  $('stepIndicator').textContent = `Step ${k + 1} / ${E.states.length}`;
 }
 
 function updateNav() {
   prevBtn.disabled = busy || currentStep === 0;
-  nextBtn.disabled = busy || currentStep === states.length - 1;
+  nextBtn.disabled = busy || currentStep === E.states.length - 1;
+  tabs.forEach((t) => { t.disabled = busy; });
 }
 
-function setFocus(indices) {
-  cells.forEach((c) => c.classList.remove('focus'));
-  indices.forEach((i) => cells.get(states[currentStep].array[i]).classList.add('focus'));
-}
-
-/* ------------------------------------------------------------------ */
-/* renderState: the single source of truth for a settled screen       */
-/* ------------------------------------------------------------------ */
-
-function renderState(step) {
-  const s = states[step];
-  currentStep = step;
-  displayed = s.array.slice();
+/* The single source of truth for a settled screen. */
+function renderState(k, flashFrom) {
+  const s = E.states[k];
+  currentStep = k;
+  displayed = s.ids.slice();
   positionCells(displayed);
-  renderTexts(step, 'static');
-  renderVars(s);
-  renderPointers(s);
-  renderBrackets(s);
-  renderProgress(step);
-  setFocus(s.focus || []);
-  $('opStatus').textContent = '';
-
-  const nc = $('nextCall');
-  nc.hidden = !s.nextCall;
-  if (s.nextCall) {
-    $('ncLeft').textContent = s.nextCall.left;
-    $('ncMid').textContent = s.nextCall.mid;
-    $('ncRight').textContent = s.nextCall.right;
-    nc.style.animation = 'none';
-    void nc.offsetWidth;            // restart the entrance animation
-    nc.style.animation = '';
-  }
+  renderTexts(k);
+  renderVars(s, flashFrom || null);
+  renderPointers(s.ptr);
   updateNav();
 }
 
-/* ------------------------------------------------------------------ */
-/* Animation                                                          */
-/* ------------------------------------------------------------------ */
+/* ---------- animation ---------- */
 
-function setDur(seconds, ...nodes) {
-  nodes.forEach((n) => { n.style.transitionDuration = seconds * SPEED + 's'; });
-}
+function setDur(seconds, ...nodes) { nodes.forEach((nd) => { nd.style.transitionDuration = seconds * SPEED + 's'; }); }
 
-/* Swaps arr[a] and arr[b] on screen (and in `arr`), cells travel visibly. */
-async function animateSwap(a, b, arr) {
-  const va = arr[a], vb = arr[b];
-  const A = cells.get(va), B = cells.get(vb);
+/* Swaps arr[a] and arr[b] on screen: highlight, lift apart, travel, settle. */
+async function animateSwap(a, b, ids) {
+  const ia = ids[a], ib = ids[b];
+  const A = cells[ia], B = cells[ib];
   const { lane } = geo;
 
-  // 1. highlight both elements and their indices
   [A, B].forEach((c) => c.classList.add('swap-hi'));
-  idxEls[a].classList.add('hot');
-  idxEls[b].classList.add('hot');
-  await wait(450);
+  idxEls[a].classList.add('hot'); idxEls[b].classList.add('hot');
+  await wait(400);
 
-  // 2. lift: one element up, the other down, so they can pass each other
-  setDur(0.3, A, B);
-  moveCell(va, a, -lane);
-  moveCell(vb, b, lane);
-  await wait(330);
+  setDur(0.28, A, B);
+  moveCell(ia, a, -lane); moveCell(ib, b, lane);
+  await wait(300);
 
-  // 3. travel to each other's position
-  setDur(0.8, A, B);
-  moveCell(va, b, -lane);
-  moveCell(vb, a, lane);
-  await wait(820);
+  setDur(0.75, A, B);
+  moveCell(ia, b, -lane); moveCell(ib, a, lane);
+  await wait(780);
 
-  // 4. settle into the row
-  setDur(0.3, A, B);
-  moveCell(va, b, 0);
-  moveCell(vb, a, 0);
-  await wait(340);
+  setDur(0.28, A, B);
+  moveCell(ia, b, 0); moveCell(ib, a, 0);
+  await wait(300);
 
-  // 5. update the array, drop the temporary highlight
-  arr[a] = vb;
-  arr[b] = va;
+  ids[a] = ib; ids[b] = ia;
   [A, B].forEach((c) => { c.classList.remove('swap-hi'); c.style.transitionDuration = ''; });
-  idxEls[a].classList.remove('hot');
-  idxEls[b].classList.remove('hot');
-  await wait(120);
-}
-
-async function animateCompare(a, b, arr) {
-  const A = cells.get(arr[a]), B = cells.get(arr[b]);
-  [A, B].forEach((c) => c.classList.add('cmp'));
-  idxEls[a].classList.add('hot');
-  idxEls[b].classList.add('hot');
-  await wait(1200);
-  [A, B].forEach((c) => c.classList.remove('cmp'));
-  idxEls[a].classList.remove('hot');
-  idxEls[b].classList.remove('hot');
+  idxEls[a].classList.remove('hot'); idxEls[b].classList.remove('hot');
   await wait(100);
 }
 
-/* ------------------------------------------------------------------ */
-/* Navigation                                                         */
-/* ------------------------------------------------------------------ */
+/* ---------- navigation ---------- */
 
 async function goTo(target) {
-  if (busy || target < 0 || target >= states.length || target === currentStep) return;
+  if (busy || target < 0 || target >= E.states.length || target === currentStep) return;
   busy = true;
   updateNav();
-  setFocus([]);
 
   const forward = target > currentStep;
-  const owner = forward ? states[target] : states[currentStep];   // state that owns the transition
-  const arr = displayed.slice();
-  const status = $('opStatus');
+  const from = E.states[currentStep];
+  const owner = forward ? E.states[target] : from;     // the state whose swaps this move plays
+  const ids = displayed.slice();
 
   if (forward) {
-    renderTexts(target, 'pending');
-    let opIdx = 0;
-    if (owner.compare) {
-      setOp(opIdx, 'active');
-      status.textContent = 'Comparing…';
-      await animateCompare(owner.compare.a, owner.compare.b, arr);
-      setOp(opIdx++, 'done');
-    }
-    for (const [a, b] of owner.swaps) {
-      setOp(opIdx, 'active');
-      status.textContent = 'Swapping…';
-      await animateSwap(a, b, arr);
-      setOp(opIdx++, 'done');
-    }
-    if (!owner.compare && !owner.swaps.length) await wait(400);
+    $('opLine').textContent = owner.op;
+    for (const [a, b] of owner.swaps) await animateSwap(a, b, ids);
+    if (!owner.swaps.length) await wait(200);
   } else {
-    for (let k = owner.swaps.length - 1; k >= 0; k--) {
-      const [a, b] = owner.swaps[k];
-      status.textContent = `Rewinding: undoing swap(arr[${a}], arr[${b}])`;
-      await animateSwap(a, b, arr);
-    }
-    if (!owner.swaps.length) await wait(250);
+    for (let k = owner.swaps.length - 1; k >= 0; k--) await animateSwap(...owner.swaps[k], ids);
+    if (!owner.swaps.length) await wait(200);
   }
 
-  if (arr.join() !== states[target].array.join()) {
-    console.error('Animation ended in an unexpected array', arr, states[target].array);
-  }
+  if (ids.join() !== E.states[target].ids.join()) console.error('Animation ended in an unexpected order');
 
-  renderState(target);     // exact, stored state, pointers glide to their new indices
   busy = false;
-  updateNav();
+  renderState(target, forward ? from : null);   // pointers glide, changed variables flash
 }
 
-function nextStep()     { goTo(currentStep + 1); }
-function previousStep() { goTo(currentStep - 1); }
+const nextStep = () => goTo(currentStep + 1);
+const previousStep = () => goTo(currentStep - 1);
 
-/* ------------------------------------------------------------------ */
-/* Init                                                               */
-/* ------------------------------------------------------------------ */
+/* ---------- examples ---------- */
+
+function loadExample(e) {
+  if (busy) return;
+  E = EXAMPLES[e];
+  n = E.arr.length;
+  slots = E.slots;
+  tabs.forEach((t, k) => { t.classList.toggle('active', k === e); t.setAttribute('aria-selected', k === e); });
+  buildBoard();
+  computeGeometry();
+  applyGeometry();
+  board.classList.add('no-anim');
+  renderState(0);
+  requestAnimationFrame(() => requestAnimationFrame(() => board.classList.remove('no-anim')));
+}
 
 function layout() {
   computeGeometry();
   applyGeometry();
   board.classList.add('no-anim');
   positionCells(displayed);
-  renderPointers(states[currentStep]);
-  renderBrackets(states[currentStep]);
+  renderPointers(E.states[currentStep].ptr);
   requestAnimationFrame(() => requestAnimationFrame(() => board.classList.remove('no-anim')));
 }
 
+tabs.forEach((t) => t.addEventListener('click', () => loadExample(Number(t.dataset.ex))));
 prevBtn.addEventListener('click', previousStep);
 nextBtn.addEventListener('click', nextStep);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight') nextStep();
   if (e.key === 'ArrowLeft') previousStep();
+  if (e.key === 'ArrowRight') nextStep();
 });
 
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    if (busy) { pendingResize = true; return; }
-    layout();
-  }, 120);
+  resizeTimer = setTimeout(() => { if (busy) pendingResize = true; else layout(); }, 120);
 });
-setInterval(() => {
-  if (pendingResize && !busy) { pendingResize = false; layout(); }
-}, 400);
+setInterval(() => { if (pendingResize && !busy) { pendingResize = false; layout(); } }, 400);
 
-buildBoard();
-computeGeometry();
-applyGeometry();
-board.classList.add('no-anim');
-renderState(0);
-requestAnimationFrame(() => requestAnimationFrame(() => board.classList.remove('no-anim')));
+loadExample(0);
